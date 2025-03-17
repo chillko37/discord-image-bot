@@ -6,11 +6,21 @@ import discord
 from discord.ext import commands
 import asyncio
 import io
+import logging
+from http.server import HTTPServer, BaseHTTPRequestHandler
+
+# Thiết lập logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 # Lấy API key và token từ biến môi trường trên Render
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 BOT1_TOKEN = os.getenv("BOT1_TOKEN")
 BOT2_TOKEN = os.getenv("BOT2_TOKEN")
+
+logger.info(f"GROQ_API_KEY: {'set' if GROQ_API_KEY else 'not set'}")
+logger.info(f"BOT1_TOKEN: {'set' if BOT1_TOKEN else 'not set'}")
+logger.info(f"BOT2_TOKEN: {'set' if BOT2_TOKEN else 'not set'}")
 
 # Tệp txt chứa danh sách URL
 IMAGE_URLS_FILE = "image_urls.txt"
@@ -29,18 +39,34 @@ intents.message_content = True
 bot1 = commands.Bot(command_prefix="!", intents=intents)
 bot2 = commands.Bot(command_prefix="$", intents=intents)
 
+# Dummy HTTP server để Render detect port
+class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/plain")
+        self.end_headers()
+        self.wfile.write(b"Bot is running!")
+
+def start_http_server():
+    port = int(os.getenv("PORT", 10000))  # Render cung cấp PORT qua biến môi trường, mặc định 10000
+    server = HTTPServer(("", port), SimpleHTTPRequestHandler)
+    logger.info(f"Starting HTTP server on port {port}")
+    server.serve_forever()
+
 def read_image_urls(file_path):
     """Đọc danh sách URL từ tệp txt."""
     if not os.path.exists(file_path):
         with open(file_path, "w", encoding="utf-8") as f:
             f.write("")
+        logger.info(f"Tạo tệp rỗng: {file_path}")
         return []
     try:
         with open(file_path, "r", encoding="utf-8") as f:
             urls = [line.strip() for line in f if line.strip()]
+        logger.info(f"Đọc {len(urls)} URL từ {file_path}")
         return urls
     except Exception as e:
-        print(f"Lỗi khi đọc tệp URL: {e}")
+        logger.error(f"Lỗi khi đọc tệp URL: {e}")
         return []
 
 def update_image_urls(file_path, url_to_remove):
@@ -53,10 +79,12 @@ def update_image_urls(file_path, url_to_remove):
             urls.remove(url_to_remove)
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write("\n".join(urls) + "\n" if urls else "")
+            logger.info(f"Đã xóa URL {url_to_remove} khỏi {file_path}")
             return True
+        logger.info(f"Không tìm thấy URL {url_to_remove} để xóa")
         return False
     except Exception as e:
-        print(f"Lỗi khi cập nhật tệp URL: {e}")
+        logger.error(f"Lỗi khi cập nhật tệp URL: {e}")
         return False
 
 def analyze_image_with_groq(image_url, model="llama-3.2-11b-vision-preview", prompt="Describe the content of the image."):
@@ -85,22 +113,24 @@ def analyze_image_with_groq(image_url, model="llama-3.2-11b-vision-preview", pro
         result = response.json()
         description = result.get("choices", [{}])[0].get("message", {}).get("content", "No description found.")
         translated = translator.translate(description, dest="vi")
+        logger.info(f"Phân tích URL {image_url} thành công")
         return description, translated.text
     except requests.exceptions.RequestException as e:
         error_msg = str(e)
         if hasattr(e.response, "text"):
             error_msg += f" - Chi tiết: {e.response.text}"
+        logger.error(f"Lỗi phân tích URL {image_url}: {error_msg}")
         return None, error_msg
 
 # Bot 1: Xử lý URL và gửi tin nhắn
 @bot1.event
 async def on_ready():
-    print(f"Bot 1 ({bot1.user}) đã sẵn sàng!")
-    channel = bot1.get_channel(1351152665358368805)  # Channel ID của bạn
+    logger.info(f"Bot 1 ({bot1.user}) đã sẵn sàng!")
+    channel = bot1.get_channel(1351152665358368805)
     if not channel:
-        print("Không tìm thấy kênh với ID 1351152665358368805. Kiểm tra Channel ID và quyền bot!")
+        logger.error("Không tìm thấy kênh với ID 1351152665358368805. Kiểm tra Channel ID và quyền bot!")
         return
-    print(f"Bot 1 đang gửi tin nhắn vào kênh: {channel.name}")
+    logger.info(f"Bot 1 đang gửi tin nhắn vào kênh: {channel.name}")
     while True:
         image_urls = read_image_urls(IMAGE_URLS_FILE)
         if not image_urls:
@@ -131,7 +161,7 @@ async def on_ready():
 # Bot 2: Phản hồi tin nhắn từ Bot 1
 @bot2.event
 async def on_ready():
-    print(f"Bot 2 ({bot2.user}) đã sẵn sàng!")
+    logger.info(f"Bot 2 ({bot2.user}) đã sẵn sàng!")
 
 @bot2.event
 async def on_message(message):
@@ -143,12 +173,20 @@ async def on_message(message):
         elif "Lỗi với" in message.content:
             await message.channel.send(f"Thử lại đi, có lỗi kìa!")
 
-# Chạy cả hai bot
+# Chạy cả hai bot và HTTP server
 async def run_bots():
-    await asyncio.gather(
-        bot1.start(BOT1_TOKEN),
-        bot2.start(BOT2_TOKEN)
-    )
+    try:
+        # Chạy HTTP server trong luồng riêng
+        loop = asyncio.get_event_loop()
+        import threading
+        threading.Thread(target=start_http_server, daemon=True).start()
+        await asyncio.gather(
+            bot1.start(BOT1_TOKEN),
+            bot2.start(BOT2_TOKEN)
+        )
+    except Exception as e:
+        logger.error(f"Lỗi khi khởi động bot: {e}")
 
 if __name__ == "__main__":
+    logger.info("Bắt đầu chạy bot...")
     asyncio.run(run_bots())
