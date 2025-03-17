@@ -35,6 +35,7 @@ translator = Translator()
 # Cấu hình bot
 intents = discord.Intents.default()
 intents.message_content = True
+intents.guilds = True  # Thêm intent để lấy thông tin server
 
 bot1 = commands.Bot(command_prefix="!", intents=intents)
 bot2 = commands.Bot(command_prefix="$", intents=intents)
@@ -48,13 +49,12 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
         self.wfile.write(b"Bot is running!")
 
 def start_http_server():
-    port = int(os.getenv("PORT", 10000))  # Render cung cấp PORT qua biến môi trường, mặc định 10000
+    port = int(os.getenv("PORT", 10000))
     server = HTTPServer(("", port), SimpleHTTPRequestHandler)
     logger.info(f"Starting HTTP server on port {port}")
     server.serve_forever()
 
 def read_image_urls(file_path):
-    """Đọc danh sách URL từ tệp txt."""
     if not os.path.exists(file_path):
         with open(file_path, "w", encoding="utf-8") as f:
             f.write("")
@@ -70,7 +70,6 @@ def read_image_urls(file_path):
         return []
 
 def update_image_urls(file_path, url_to_remove):
-    """Xóa URL đã phân tích thành công khỏi tệp txt."""
     try:
         with open(file_path, "r", encoding="utf-8") as f:
             urls = [line.strip() for line in f if line.strip()]
@@ -88,7 +87,6 @@ def update_image_urls(file_path, url_to_remove):
         return False
 
 def analyze_image_with_groq(image_url, model="llama-3.2-11b-vision-preview", prompt="Describe the content of the image."):
-    """Gửi yêu cầu đến Groq API để phân tích hình ảnh qua URL."""
     headers = {
         "Authorization": f"Bearer {GROQ_API_KEY}",
         "Content-Type": "application/json"
@@ -126,9 +124,13 @@ def analyze_image_with_groq(image_url, model="llama-3.2-11b-vision-preview", pro
 @bot1.event
 async def on_ready():
     logger.info(f"Bot 1 ({bot1.user}) đã sẵn sàng!")
-    channel = bot1.get_channel(1351152665358368805)
+    guild = bot1.get_guild(1351152665358368802)  # Guild ID từ URL bạn gửi
+    if not guild:
+        logger.error("Không tìm thấy server với Guild ID 1351152665358368802. Kiểm tra Guild ID và quyền bot!")
+        return
+    channel = guild.get_channel(1351152665358368805)  # Channel ID từ URL bạn gửi
     if not channel:
-        logger.error("Không tìm thấy kênh với ID 1351152665358368805. Kiểm tra Channel ID và quyền bot!")
+        logger.error("Không tìm thấy kênh với ID 1351152665358368805 trong server. Kiểm tra Channel ID!")
         return
     logger.info(f"Bot 1 đang gửi tin nhắn vào kênh: {channel.name}")
     while True:
@@ -176,7 +178,6 @@ async def on_message(message):
 # Chạy cả hai bot và HTTP server
 async def run_bots():
     try:
-        # Chạy HTTP server trong luồng riêng
         loop = asyncio.get_event_loop()
         import threading
         threading.Thread(target=start_http_server, daemon=True).start()
