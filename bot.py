@@ -8,11 +8,11 @@ import asyncio
 import io
 
 # API key từ Groq
-GROQ_API_KEY = os.getenv("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")  # Lấy từ biến môi trường trên Render
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")  # Lấy từ biến môi trường trên Render
 
 # Token bot Discord
-BOT1_TOKEN = os.getenv("MTM1MTE1MzI5NzczNzc3NzE2Mw.G1aTmf.jKGjhlwFSqW7MFBdoSKYD75qsYwK2eoBnBKBds")
-BOT2_TOKEN = os.getenv("MTM1MTE1NDM2MTk2Mjg1NjU0OQ.GOGUJ-.FPt6K8-W_DMfUfiZUvZ7xhxPGivadkXE1hfxfI")
+BOT1_TOKEN = os.getenv("BOT1_TOKEN")
+BOT2_TOKEN = os.getenv("BOT2_TOKEN")
 
 # Tệp txt chứa danh sách URL
 IMAGE_URLS_FILE = "image_urls.txt"
@@ -102,8 +102,7 @@ def analyze_image_with_groq(image_url, model="llama-3.2-11b-vision-preview", pro
 @bot1.event
 async def on_ready():
     print(f"Bot 1 ({bot1.user}) đã sẵn sàng!")
-    channel = bot1.get_channel(1351152665358368805)  # Thay bằng ID kênh thực tế
-    # Hoặc dùng tên: channel = discord.utils.get(bot1.get_all_channels(), name="general")
+    channel = bot1.get_channel(1351152665358368805)  # THAY BẰNG CHANNEL ID THỰC TẾ
     if channel:
         while True:
             image_urls = read_image_urls(IMAGE_URLS_FILE)
@@ -119,7 +118,6 @@ async def on_ready():
                 if eng_desc:
                     msg = f"URL: {url}\nMô tả (EN): {eng_desc}\nMô tả (VN): {vi_desc}"
                     await channel.send(msg)
-                    # Tạo file tạm và gửi lên Discord
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                     filename = f"analysis_{timestamp}.txt"
                     content = f"Image URL: {url}\nEnglish description: {eng_desc}\nVietnamese description: {vi_desc}\n{'-'*50}\n\n"
