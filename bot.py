@@ -7,10 +7,8 @@ from discord.ext import commands
 import asyncio
 import io
 
-# API key từ Groq
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")  # Lấy từ biến môi trường trên Render
-
-# Token bot Discord
+# Lấy API key và token từ biến môi trường trên Render
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 BOT1_TOKEN = os.getenv("BOT1_TOKEN")
 BOT2_TOKEN = os.getenv("BOT2_TOKEN")
 
@@ -50,7 +48,6 @@ def update_image_urls(file_path, url_to_remove):
     try:
         with open(file_path, "r", encoding="utf-8") as f:
             urls = [line.strip() for line in f if line.strip()]
-        
         url_to_remove = url_to_remove.strip()
         if url_to_remove in urls:
             urls.remove(url_to_remove)
@@ -68,7 +65,6 @@ def analyze_image_with_groq(image_url, model="llama-3.2-11b-vision-preview", pro
         "Authorization": f"Bearer {GROQ_API_KEY}",
         "Content-Type": "application/json"
     }
-
     payload = {
         "model": model,
         "messages": [
@@ -83,11 +79,9 @@ def analyze_image_with_groq(image_url, model="llama-3.2-11b-vision-preview", pro
         "max_tokens": 100,
         "temperature": 0.7
     }
-
     try:
         response = requests.post("https://api.groq.com/openai/v1/chat/completions", json=payload, headers=headers, timeout=10)
         response.raise_for_status()
-
         result = response.json()
         description = result.get("choices", [{}])[0].get("message", {}).get("content", "No description found.")
         translated = translator.translate(description, dest="vi")
@@ -102,36 +96,37 @@ def analyze_image_with_groq(image_url, model="llama-3.2-11b-vision-preview", pro
 @bot1.event
 async def on_ready():
     print(f"Bot 1 ({bot1.user}) đã sẵn sàng!")
-    channel = bot1.get_channel(1351152665358368805)  # THAY BẰNG CHANNEL ID THỰC TẾ
-    if channel:
-        while True:
-            image_urls = read_image_urls(IMAGE_URLS_FILE)
-            if not image_urls:
-                await channel.send("Không có URL nào trong tệp image_urls.txt! Đợi thêm URL mới...")
-                await asyncio.sleep(60)
-                continue
-            
-            await channel.send(f"Đã tìm thấy {len(image_urls)} URL để phân tích.")
-            for url in image_urls:
-                await channel.send(f"Đang phân tích: {url}")
-                eng_desc, vi_desc = analyze_image_with_groq(url)
-                if eng_desc:
-                    msg = f"URL: {url}\nMô tả (EN): {eng_desc}\nMô tả (VN): {vi_desc}"
-                    await channel.send(msg)
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    filename = f"analysis_{timestamp}.txt"
-                    content = f"Image URL: {url}\nEnglish description: {eng_desc}\nVietnamese description: {vi_desc}\n{'-'*50}\n\n"
-                    with io.StringIO(content) as file:
-                        await channel.send(file=discord.File(file, filename))
-                    if update_image_urls(IMAGE_URLS_FILE, url):
-                        await channel.send(f"Đã xóa URL {url} khỏi image_urls.txt")
-                    else:
-                        await channel.send(f"Không xóa được URL {url} khỏi tệp!")
-                else:
-                    await channel.send(f"Lỗi với {url}: {vi_desc}")
-                await asyncio.sleep(1)
-            
+    channel = bot1.get_channel(1351152665358368805)  # Channel ID của bạn
+    if not channel:
+        print("Không tìm thấy kênh với ID 1351152665358368805. Kiểm tra Channel ID và quyền bot!")
+        return
+    print(f"Bot 1 đang gửi tin nhắn vào kênh: {channel.name}")
+    while True:
+        image_urls = read_image_urls(IMAGE_URLS_FILE)
+        if not image_urls:
+            await channel.send("Không có URL nào trong tệp image_urls.txt! Đợi thêm URL mới...")
             await asyncio.sleep(60)
+            continue
+        await channel.send(f"Đã tìm thấy {len(image_urls)} URL để phân tích.")
+        for url in image_urls:
+            await channel.send(f"Đang phân tích: {url}")
+            eng_desc, vi_desc = analyze_image_with_groq(url)
+            if eng_desc:
+                msg = f"URL: {url}\nMô tả (EN): {eng_desc}\nMô tả (VN): {vi_desc}"
+                await channel.send(msg)
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"analysis_{timestamp}.txt"
+                content = f"Image URL: {url}\nEnglish description: {eng_desc}\nVietnamese description: {vi_desc}\n{'-'*50}\n\n"
+                with io.StringIO(content) as file:
+                    await channel.send(file=discord.File(file, filename))
+                if update_image_urls(IMAGE_URLS_FILE, url):
+                    await channel.send(f"Đã xóa URL {url} khỏi image_urls.txt")
+                else:
+                    await channel.send(f"Không xóa được URL {url} khỏi tệp!")
+            else:
+                await channel.send(f"Lỗi với {url}: {vi_desc}")
+            await asyncio.sleep(1)
+        await asyncio.sleep(60)
 
 # Bot 2: Phản hồi tin nhắn từ Bot 1
 @bot2.event
